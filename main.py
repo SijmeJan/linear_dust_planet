@@ -50,9 +50,9 @@ def equilibrium_velocities(param_dict):
 
 # Dictionary with parameters
 param_dict = {
-    'soft' : 0.01,                       # Potential softening (0.007)
+    'soft' : 0.005,                       # Potential softening (0.007)
     'q' : 3e-5,                           # Planet/star mass ratio
-    'taus': 0.01,                          # Stokes number
+    'taus': 0.1,                          # Stokes number
     'eta': 0.001875,                      # Radial pressure gradient parameter
     'zero_velocity_background' : True     # Take bkg radial velocity into perturbation?
 }
