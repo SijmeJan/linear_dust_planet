@@ -1,9 +1,11 @@
 import numpy as np
 import scipy as sp
 
+from fargo import read_fargo
+
 class VelocityField():
     def __init__(self):
-        self.method = 'linear'
+        self.method = 'cubic'
 
     @classmethod
     def from_linear(cls, linear_vel_field, max_m, ignore_source=False, approx=False):
@@ -21,36 +23,10 @@ class VelocityField():
         return ret
 
     @classmethod
-    def from_fargo(cls, direc, number):
+    def from_fargo(cls, direc, number, n_fluid=1):
         ret = cls()
 
-        ngh=3
-        phi = np.loadtxt(direc + '/domain_x.dat')
-        r = np.loadtxt(direc + '/domain_y.dat') [ngh:-ngh]
-
-        # Cell centres
-        phi = 0.5*(phi + np.roll(phi, 1))[1:]
-        r = 0.5*(r + np.roll(r, 1))[1:]
-
-        ngh=3
-        nphi = np.max([1,len(np.loadtxt(direc+'/domain_x.dat'))-1])
-        nr = np.max([1,len(np.loadtxt(direc+'/domain_y.dat')[ngh:-ngh])-1])
-
-        print('Creating from FARGO snapshot with Nr = ', nr, ', Nphi = ', nphi)
-
-        read = \
-          lambda f:np.transpose(np.fromfile(f).reshape(1,nr,nphi),[2,1,0])
-
-        n_fluid=1
-        filename = direc + '/dust{}vx{}.dat'.format(n_fluid, number)
-        v = read(filename)[:,:,0]
-
-        # Velocity perturbation over Keplerian
-        for j in range(0, nphi):
-            v[j,:] = v[j,:] + r - 1/np.sqrt(r)
-
-        filename= direc + '/dust{}vy{}.dat'.format(n_fluid, number)
-        u = read(filename)[:,:,0]
+        r, phi, u, v = read_fargo(direc, number, n_fluid=n_fluid)
 
         ret.u = sp.interpolate.RegularGridInterpolator((r, phi), u.transpose(), method=ret.method, bounds_error=False, fill_value=None)
         ret.v = sp.interpolate.RegularGridInterpolator((r, phi), v.transpose(), method=ret.method, bounds_error=False, fill_value=None)

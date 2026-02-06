@@ -2,7 +2,8 @@ import numpy as np
 import scipy as sp
 
 from potential import PotentialComponent
-from surface_density import calc_surface_density_1D
+from surface_density.fourier import calc_surface_density_1D
+
 
 def nodes_weights(a, b, n=5):
     '''Gauss-Legendre nodes and weights for arbitrary interval'''

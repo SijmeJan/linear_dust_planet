@@ -2,7 +2,7 @@ import numpy as np
 import scipy as sp
 
 from laplace import LaplaceCoefficient
-
+from .fourier import calc_surface_density_sum
 
 def calc_surface_density_along_streamlines(moc, param_dict, N,
                                            r_start, phi_start=None, u_start=None,
@@ -85,17 +85,18 @@ def surface_density(moc, param_dict, N=512, r_start=1.2, dt=0.2*np.pi, r_finish=
     phi_extra = np.atan2(s*np.sin(theta), rc + s*np.cos(theta))
 
     # Check if extra starting points end on planet
-    r, phi, Sigma = calc_surface_density_along_streamlines(moc, param_dict, N2,
-                                                           r_extra, phi_start=phi_extra, u_start=0*phi_extra,
-                                                           reverse_flag=False, dt=dt, r_finish=r_finish)
-    # Only add points that end up on the planet
-    d = np.sqrt(r*r + 1 - 2*r*np.cos(phi))
-    for n in range(0, N2):
-        if np.max(d[n,:]) == d[n,0]:
+    if N2 > 0:
+        r, phi, Sigma = calc_surface_density_along_streamlines(moc, param_dict, N2,
+                                                               r_extra, phi_start=phi_extra, u_start=0*phi_extra,
+                                                               reverse_flag=False, dt=dt, r_finish=r_finish)
+        # Only add points that end up on the planet
+        d = np.sqrt(r*r + 1 - 2*r*np.cos(phi))
+        for n in range(0, N2):
+            #if np.max(d[n,:]) == d[n,0]:
             r_start = np.append(r_start, r_extra[n])
             phi_start = np.append(phi_start, phi_extra[n])
 
-    print('HALLO: ', np.shape(r_start), np.shape(phi_start))
+    #print(r_start, len(r_start))
 
     N = len(r_start)
     u_start = np.zeros(N)
@@ -108,6 +109,8 @@ def surface_density(moc, param_dict, N=512, r_start=1.2, dt=0.2*np.pi, r_finish=
                                                            r_start, phi_start=phi_start, u_start=u_start,
                                                            reverse_flag=reverse_flag, dt=dt, r_finish=r_finish)
 
+    #print('Result: ', r, phi, Sigma )
+    #print(np.shape(r))
     return r,phi,Sigma
 
 def calc_surface_density_moc(r, phi, moc, param_dict):
@@ -141,49 +144,6 @@ def calc_surface_density_moc(r, phi, moc, param_dict):
     if np.isscalar(phi):
         return fac[0]*Sigma[0,0]
     return fac*Sigma[:,0]
-
-def calc_surface_density_1D(r, m, u0, vel_field):
-    u, v = vel_field.calc_1D_profile(r, m)
-
-    u1, v1 = vel_field.calc_1D_profile(np.asarray([1.0]), m)
-
-    x = r**(1.5)
-    eps = 1.5*u0
-    heaviside = np.asarray(x < 1).astype(int)
-
-    ret = -u/u0 - heaviside*np.exp(-1j*m*(np.log(x)-x+1)/eps - 1j*np.pi/4)*(1j*m*v1- u1)*np.sqrt(2*np.pi*np.abs(eps))/(eps*x)
-
-    return ret
-
-def calc_2D_surface_density(r, phi, m, u0, vel_field, grid_output=True):
-    Sigma1D = calc_surface_density_1D(r, m, u0, vel_field)
-
-    # Add unperturbed surface density
-    if m == 0:
-        Sigma1D = Sigma1D + 1/np.sqrt(r)
-
-    if grid_output is True:
-        # Output on r,phi grid
-        Sigma = np.zeros((len(r), len(phi)), dtype=np.complex128)
-
-        for i in range(0, len(phi)):
-            Sigma[:,i] = Sigma1D*np.exp(1j*m*phi[i])
-    else:
-        if np.shape(r) != np.shape(phi):
-            raise TypeError("r and phi need to have the same shape for 1D output")
-
-        Sigma = Sigma1D*np.exp(1j*m*phi)
-
-    return Sigma
-
-def calc_surface_density_sum(r, phi, mmax, u0, vel_field, grid_output=True):
-    # Calculate m=0 component
-    Sigma = calc_2D_surface_density(r, phi, 0, u0, vel_field, grid_output=grid_output)
-
-    for m in range(1, mmax):
-        Sigma = Sigma + calc_2D_surface_density(r, phi, m, u0, vel_field, grid_output=grid_output)
-
-    return Sigma
 
 def calc_surface_density_approx(r, phi, u0, param_dict):
     rr = np.atleast_1d(r)
@@ -240,31 +200,6 @@ def calc_surface_density_approx(r, phi, u0, param_dict):
     return Sigma
     #return np.exp(dlog)/np.sqrt(r)
 
-def radial_scale(param_dict):
-    B = LaplaceCoefficient()
-
-    eps = param_dict['soft']
-
-    def func(x):
-        b  = B(x, 0.5, 0, np.sqrt(1.0 + eps*eps), 1)
-        db = B.derivative(x, 0.5, 0, np.sqrt(1.0 + eps*eps), 1)
-        d2b= B.second_derivative(x, 0.5, 0, np.sqrt(1.0 + eps*eps), 1)
-        return param_dict['taus']*param_dict['q']*x**(9/2)*(3.5*b + 5.5*x*db + x*x*d2b)/(x**(1.5)-1) + 1
-
-    #import matplotlib.pyplot as plt
-
-    #x = np.linspace(0.8, 0.99, 100)
-    #ret = 0*x
-    #for i in range(0, len(x)):
-    #    ret[i] = func(x[i])
-    #plt.plot(x, ret)
-    #plt.show()
-
-    xtilde = sp.optimize.fsolve(func, 0.99999)
-
-    return 1/xtilde[0]
-
-
 
 
 class SurfaceDensity():
@@ -283,7 +218,7 @@ class SurfaceDensity():
         if dt is None:
             dt = 0.2*np.pi*0.1/param_dict['taus']
 
-        r, phi, Sigma = surface_density(moc, param_dict, r_start=r_start, N=N, dt=dt, r_finish=1.5, r_circle=r_circle, reverse_flag=reverse_flag)
+        r, phi, Sigma = surface_density(moc, param_dict, r_start=r_start, N=N, dt=dt, r_finish=1.5, r_circle=r_circle, reverse_flag=reverse_flag,streamline_plot=False)
 
         ret.Sigma = Sigma
         ret.r = r
@@ -295,10 +230,16 @@ class SurfaceDensity():
     def from_approx(cls, param_dict, r, phi):
         func = lambda x: -0.5*x*x - (1-param_dict['eta'])**2/(1 + 0.5*param_dict['taus']*x)**2 + 1 + x/param_dict['taus']
         u0 = sp.optimize.fsolve(func, 0.0)[0]
-
+        print('u0 = ', u0)
         Sigma = np.zeros((len(r), len(phi)))
         for i in range(0,len(r)):
             Sigma[i,:] = calc_surface_density_approx(r[i], phi, u0, param_dict)
+
+        return cls(param_dict, r=r, phi=phi, Sigma=Sigma)
+
+    @classmethod
+    def from_fourier(cls, param_dict, r, phi, lin_vel, mrange=[0,200], method='ode'):
+        Sigma = calc_surface_density_sum(r, phi, mrange, lin_vel, grid_output=True, method=method)
 
         return cls(param_dict, r=r, phi=phi, Sigma=Sigma)
 

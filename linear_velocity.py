@@ -1,4 +1,5 @@
 import numpy as np
+import scipy as sp
 
 from potential import PotentialComponent
 
@@ -6,11 +7,77 @@ class LinearVelocity():
     def __init__(self, param_dict):
         self.param_dict = param_dict
 
+        func = lambda x: -0.5*x*x - (1-param_dict['eta'])**2/(1 + 0.5*param_dict['taus']*x)**2 + 1 + x/param_dict['taus']
+        self.u0 = sp.optimize.fsolve(func, 0.0)[0]
+        self.Omega0 = np.sqrt(1-2*param_dict['eta'])/(0.5*param_dict['taus']*self.u0 + 1)
+
+    def calc_derivative(self, r, m):
+        r = np.asarray(r)
+        scalar_input = False
+        if r.ndim == 0:
+            r = r[None]  # Makes x 1D
+            scalar_input = True
+
+        # Keplerian angular velocity.
+        Omega = self.Omega0*r**(-1.5)
+        tau = self.param_dict['taus']*r**(1.5)
+
+        dOmega = -1.5*Omega/r
+        dtau = 1.5*tau/r
+
+        # Planet potential component
+        Phi = PotentialComponent(m, self.param_dict['soft'], method='Bessel')
+        if m < 150:
+            Phi = PotentialComponent(m, self.param_dict['soft'], method='Hyper')
+
+        pot = 0*r
+        dpot = 0*r
+        d2pot = 0*r
+        for i in range(0, len(r)):
+            pot[i] = self.param_dict['q']*Phi(r[i])
+            dpot[i] = self.param_dict['q']*Phi.derivative(r[i])
+            d2pot[i] = self.param_dict['q']*Phi.second_derivative(r[i])
+
+        # indirect term
+        if m == 1:
+            pot = pot + self.param_dict['q']*r
+            dpot = dpot + self.param_dict['q']
+
+        # Extra term taking into account m=0 from radial pressure gradient
+        Pi = 0.0*r
+        dPi = 0.0*r
+        if self.param_dict['zero_velocity_background'] is True:
+            if m == 0:
+                Pi = -self.param_dict['eta']*r**(-2)/self.param_dict['taus']
+                dPi = -2*Pi/r
+
+        # Calculate velocity perturbations
+        sigma = 1j*m*(Omega - 1.0) + 1/tau
+        dsigma = 1j*m*dOmega - dtau/tau/tau
+
+        #u = -(2j*Omega*m*pot/r - 2*Omega*Pi + sigma*dpot)/(sigma*sigma + Omega*Omega)
+        #v = -(1j*m*sigma*pot/r - sigma*Pi + 0.5*Omega*dpot)/(sigma*sigma + Omega*Omega)
+
+        du = -(-5j*Omega*m*pot/r/r + 2j*Omega*m*dpot/r - 2*dOmega*Pi -2*Omega*dPi + dsigma*dpot+ sigma*d2pot)/(sigma*sigma + Omega*Omega) \
+            + (2j*Omega*m*pot/r - 2*Omega*Pi + sigma*dpot)*(2*sigma*dsigma + 2*Omega*dOmega)/(sigma*sigma + Omega*Omega)**2
+        dv = -(1j*m*dsigma*pot/r - 1j*m*sigma*pot/r/r + 1j*m*sigma*dpot/r - dsigma*Pi - sigma*dPi + 0.5*dOmega*dpot + 0.5*Omega*d2pot)/(sigma*sigma + Omega*Omega) \
+            + (1j*m*sigma*pot/r - sigma*Pi + 0.5*Omega*dpot)*(2*sigma*dsigma + 2*Omega*dOmega)/(sigma*sigma + Omega*Omega)**2
+
+        if scalar_input:
+            return np.squeeze(du), np.squeeze(dv)
+
+        return du, dv
+
     def calc_1D_profile(self, r, m, full_output=False):
         '''Returns velocity perturbations due at azimuthal wavenumber m at specific radii'''
+        r = np.asarray(r)
+        scalar_input = False
+        if r.ndim == 0:
+            r = r[None]  # Makes x 1D
+            scalar_input = True
 
         # Keplerian angular velocity. Change to equilibrium?
-        Omega = r**(-1.5)
+        Omega = self.Omega0*r**(-1.5)
         tau = self.param_dict['taus']*r**(1.5)
 
         # Extra term taking into account m=0 from radial pressure gradient
@@ -48,8 +115,14 @@ class LinearVelocity():
             dudr = -Omega*Pi - 1j*m*Omega*(pot + 2*r*dpot)/r + 1.5*(1j*m-sigma)*dpot - r*sigma*d2pot - (2j*m*Omega*pot/r + sigma*dpot)*3j*sigma*m/(sigma*sigma + Omega*Omega)
             dudr = dudr/r/(sigma*sigma + Omega*Omega)
 
+            if scalar_input:
+                return np.squeeze(u), np.squeeze(v), np.squeeze(-dudr-1j*m*v/r)
+
             # In addition output MoC source term
             return u, v, -dudr-1j*m*v/r
+
+        if scalar_input:
+            return np.squeeze(u), np.squeeze(v)
 
         return u, v
 
