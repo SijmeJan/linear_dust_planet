@@ -84,6 +84,7 @@ param_dict = {
 #acc_eff_soft5_3 = [0.4023, 0.4023, 0.3867, 0.3711, 0.3438, 0.3125, 0.2930, 0.2461, 0.1953, 0.1523, 0.1250]
 #acc_liu =         [0.5529, 0.5355, 0.5202, 0.4828, 0.4385, 0.3830, 0.3230, 0.2564, 0.2035, 0.1499, 0.1190]
 
+
 def mass_flux(param_dict, stokes_range):
     stokes_range = np.asarray(stokes_range)
     scalar_input = False
@@ -119,16 +120,32 @@ def total_mass_flux(param_dict, stokes_min, stokes_max):
     b = stokes_max
     return sp.integrate.quad(lambda x: mass_flux(param_dict, x)*0.5/np.sqrt(x)/(np.sqrt(b) - np.sqrt(a)), a, b)[0]
 
+min_stokes = 0.01
+max_stokes = 1.0
+
 planet_mass = np.linspace(1, 30, 100)
 acc = 0*planet_mass
 for i in range(0, len(acc)):
     param_dict['q'] = planet_mass[i]*3.0e-6
-    acc[i] = total_mass_flux(param_dict, 0.01, 1.0)
+    acc[i] = total_mass_flux(param_dict, min_stokes, max_stokes)
 
-plt.plot(planet_mass, -acc)
+plt.plot(planet_mass, -acc, label=r'$\mathrm{St}\in [0.01,1]$')
 
-acc_lyra = 3*(1.0/0.1)**(2/3)*2*np.pi*(planet_mass*1.0e-6)**(2/3)*0.01*1.0e-4/(14-3*3.5)/3.0e-6
-plt.plot(planet_mass, acc_lyra)
+acc_mono = 0*planet_mass
+for i in range(0, len(acc)):
+    param_dict['q'] = planet_mass[i]*3.0e-6
+    acc_mono[i] = total_mass_flux(param_dict, max_stokes-1.0e-3, max_stokes + 1.0e-3)
+
+plt.plot(planet_mass, -acc_mono, label=r'$\mathrm{St=1}$')
+plt.ylabel(r'Accretion rate ($M_\oplus/\mathrm{yr}$)')
+plt.xlabel(r'$M_p/M_{\oplus}$')
+plt.legend()
+
+#acc_lyra = 3*(max_stokes/0.1)**(2/3)*2*np.pi*(planet_mass*1.0e-6)**(2/3)*0.01*1.0e-4/(14-3*3.5)/3.0e-6
+#plt.plot(planet_mass, acc_lyra)
+
+#acc_lyra2 = np.pi*(6/7/(0.1)**(2/3))*(max_stokes**(7/6) - min_stokes**(7/6))/(max_stokes**(1/2) - min_stokes**(1/2))*(planet_mass*1.0e-6)**(2/3)*0.01*1.0e-4/3.0e-6
+#plt.plot(planet_mass, acc_lyra2)
 
 #plt.xscale('log')
 plt.yscale('log')

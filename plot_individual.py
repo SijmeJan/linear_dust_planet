@@ -1,5 +1,8 @@
 import numpy as np
+import scipy as sp
 import matplotlib.pyplot as plt
+
+from OL18 import epsilon
 
 def surface_density_perturbation():
     stokes = [0.01,       0.01274275, 0.01623777, 0.02069138, 0.02636651, 0.03359818,
@@ -165,5 +168,89 @@ def evolving_static():
     plt.show()
 
 
+def equilibrium_velocities(param_dict):
+    '''Calculate equilibrium (i.e. no planet) radial velocity and angular momentum.
+       Note that these are in fact power laws: u = u0*(r/r0)**(-0.5) and L = L0*(r/r0)**(0.5).'''
+    if (param_dict['zero_velocity_background'] is True):
+        return 0.0, 1.0
+
+    func = lambda x: -0.5*x*x - (1-param_dict['eta'])**2/(1 + 0.5*param_dict['taus']*x)**2 + 1 + x/param_dict['taus']
+    u0 = sp.optimize.fsolve(func, 0.0)[0]
+    L0 = (1-param_dict['eta'])/(1 + 0.5*u0*param_dict['taus'])
+
+    return u0, L0
+
+def mass_flux(param_dict, stokes_range):
+    stokes_range = np.asarray(stokes_range)
+    scalar_input = False
+    if stokes_range.ndim == 0:
+        stokes_range = stokes_range[None]  # Makes x 1D
+        scalar_input = True
+
+    # Accretion efficiency according to Ormel & Liu
+    acc_eff = lambda x: epsilon(mode='2dset',qp=param_dict['q'], tau=x, eta=param_dict['eta'])
+
+    ret = 0*stokes_range
+    for i in range(0, len(ret)):
+        param_dict['taus'] = stokes_range[i]
+        # Equilibrium radial velocity pebbles
+        u0 = equilibrium_velocities(param_dict)[0]
+        # Accretion rate in units of Sigma_p*r_p^2*Omega_p
+        ret[i] = 2*np.pi*u0*acc_eff(stokes_range[i])
+
+    # Convert to Earth masses per year: surface density is 1.53e-3 for M_disc = 0.01 M_sun
+    dust_to_gas_ratio = 0.01
+    Sigmap = dust_to_gas_ratio*1.0e-4 #1.53e-3
+
+    # Omega_p = 2*pi/yr to make it Earth masses per year
+    ret = ret*Sigmap*2.0*np.pi/3.0e-6
+
+    if scalar_input:
+        return np.squeeze(ret)
+
+    return ret
+
+def total_mass_flux(param_dict, stokes_min, stokes_max):
+    a = stokes_min
+    b = stokes_max
+    return sp.integrate.quad(lambda x: mass_flux(param_dict, x)*0.5/np.sqrt(x)/(np.sqrt(b) - np.sqrt(a)), a, b)[0]
+
+def figure_accretion_rate():
+    # Dictionary with parameters
+    param_dict = {
+        'soft' : 0.04,                         # Potential softening (0.007)
+        'q' : 3e-05,                           # Planet/star mass ratio
+        'taus': 1.0,                           # Stokes number
+        'eta': 0.001875,                       # Radial pressure gradient parameter
+        'zero_velocity_background' : False     # Take bkg radial velocity into perturbation?
+    }
+
+    min_stokes = 0.01
+    max_stokes = 1.0
+
+    planet_mass = np.linspace(1, 30, 100)
+    acc = 0*planet_mass
+    for i in range(0, len(acc)):
+        param_dict['q'] = planet_mass[i]*3.0e-6
+        acc[i] = total_mass_flux(param_dict, min_stokes, max_stokes)
+
+    plt.plot(planet_mass, -acc, label=r'$\mathrm{St}\in [0.01,1]$')
+
+    acc_mono = 0*planet_mass
+    for i in range(0, len(acc)):
+        param_dict['q'] = planet_mass[i]*3.0e-6
+        acc_mono[i] = total_mass_flux(param_dict, max_stokes-1.0e-3, max_stokes + 1.0e-3)
+
+    plt.plot(planet_mass, -acc_mono, label=r'$\mathrm{St=1}$')
+    plt.ylabel(r'Accretion rate ($M_\oplus/\mathrm{yr}$)')
+    plt.xlabel(r'$M_p/M_{\oplus}$')
+    plt.legend()
+
+    plt.yscale('log')
+    plt.ylim([0.00003,0.02])
+
+    plt.show()
+
 #surface_density_perturbation()
-evolving_static()
+#evolving_static()
+figure_accretion_rate()
