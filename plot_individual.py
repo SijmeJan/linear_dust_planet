@@ -56,12 +56,36 @@ def surface_density_perturbation():
     plt.legend()
     plt.show()
 
+def moc_abc_interpolate(r, phi, vel_field, min_dist=0.0):
+    '''Interpolating velocities and source term for the Method of Lines computation'''
+
+    # Ignore a circle around the planet (needed if pebble accretion)
+    fac = np.ones(len(r))
+    dist_to_planet = np.sqrt(r*r + 1 - 2*r*np.cos(phi))
+    fac[np.asarray(dist_to_planet < min_dist).nonzero()] = 0
+
+    # For convenience, remap phi to [-pi, pi]
+    phi = (phi + np.pi) % (2*np.pi) - np.pi
+    points = np.array((r, phi)).T
+
+    # Return vr, Omega, source = -dvrdr - dOmega/dphi
+    return fac*np.real(vel_field.u(points)), fac*(np.real(vel_field.v(points)/r) + np.abs(r)**(-1.5) - 1.0), fac*np.real(vel_field.src(points))
+
 def evolving_static():
     from velocity_field import VelocityField
     from linearmoc import LinearMoc
-    from main import moc_abc_interpolate
+    #from main import moc_abc_interpolate
     from accretion import calculate_accretion_efficiency
     from plot import streamline_plot
+
+    # Dictionary with parameters
+    param_dict = {
+        'soft' : 0.04,                         # Potential softening (0.007)
+        'q' : 3e-05,                           # Planet/star mass ratio
+        'taus': 1.0,                           # Stokes number
+        'eta': 0.001875,                       # Radial pressure gradient parameter
+        'zero_velocity_background' : False     # Take bkg radial velocity into perturbation?
+    }
 
     # Create velocity field from linear equations
     vel_field = VelocityField.from_fargo('/Users/sjp/Downloads/Archive/static/fargo3d/outputs/lui_ormel/', 20)
@@ -69,10 +93,10 @@ def evolving_static():
     moc = LinearMoc.from_single(lambda x,y: moc_abc_interpolate(x, y, vel_field, min_dist=0.0))
 
     # Calculate accretion efficiency from streamlines
-    eff, r, phi = calculate_accretion_efficiency(moc, None, from_streamlines=True, N=512, r_start=1.4)
+    eff, r, phi = calculate_accretion_efficiency(moc, param_dict, from_streamlines=True, N=512, r_start=1.4)
     print('Efficiency: ', eff)
 
-    fig, (ax1, ax2) = plt.subplots(1, 2)# , sharey=True, sharex=True)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9.5,4)) #sharey=True, sharex=True)
     centre = [1.0,0.0]
     size = 0.05
     streamline_plot(None)(ax1, stride=1, r=r, phi=phi)
@@ -87,7 +111,7 @@ def evolving_static():
     # Method of Characteristics object
     moc = LinearMoc.from_single(lambda x,y: moc_abc_interpolate(x, y, vel_field, min_dist=0.0))
     # Calculate accretion efficiency from streamlines
-    eff, r, phi = calculate_accretion_efficiency(moc, None, from_streamlines=True, N=1024, r_start=1.4)
+    eff, r, phi = calculate_accretion_efficiency(moc, param_dict, from_streamlines=True, N=1024, r_start=1.4)
     print('Efficiency: ', eff)
 
     streamline_plot(None)(ax2, stride=1, r=r, phi=phi)
@@ -138,6 +162,7 @@ def evolving_static():
     #rr,phiphi = np.meshgrid(r, phi)
     #v0 = v0 - rr + 1/np.sqrt(rr)
     #Q = ax2.quiver(r, phi, u-u0, (v-v0)/rr, scale=1.0e-1, units='width')
+    plt.show()
 
 
 #surface_density_perturbation()
